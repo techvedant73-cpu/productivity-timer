@@ -1,578 +1,374 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Study Timer</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #0a0a0c;
-      --bg2: #111115;
-      --surface: #18181f;
-      --border: rgba(255,255,255,0.06);
-      --text: #f0f0f0;
-      --muted: #555566;
-      --accent1: #7c6aff;
-      --accent2: #a78bfa;
-      --accent3: #38bdf8;
-      --glow: rgba(124, 106, 255, 0.25);
-      --ring-bg: rgba(255,255,255,0.04);
-      --ring-size: min(52vw, 340px);
-      --stroke: 5;
-      --r: calc(var(--ring-size) / 2 - 18px);
-      --circ: calc(2 * 3.14159265 * var(--r));
-    }
-
-    html, body {
-      height: 100%; width: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Syne', sans-serif;
-      overflow: hidden;
-      user-select: none;
-    }
-
-    /* Noise grain overlay */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-      background-size: 180px;
-      pointer-events: none; z-index: 9999;
-      opacity: 0.5;
-    }
-
-    /* Ambient gradient blobs */
-    .blob {
-      position: fixed; border-radius: 50%;
-      filter: blur(90px); pointer-events: none; z-index: 0;
-      transition: opacity 2s ease;
-    }
-    .blob1 {
-      width: 50vw; height: 50vw;
-      background: radial-gradient(circle, rgba(124,106,255,0.12) 0%, transparent 70%);
-      top: -15vw; left: -10vw;
-    }
-    .blob2 {
-      width: 40vw; height: 40vw;
-      background: radial-gradient(circle, rgba(56,189,248,0.08) 0%, transparent 70%);
-      bottom: -10vw; right: -10vw;
-    }
-    .blob-pulse {
-      animation: blobPulse 8s ease-in-out infinite alternate;
-    }
-    @keyframes blobPulse {
-      from { opacity: 0.6; transform: scale(1); }
-      to   { opacity: 1;   transform: scale(1.15); }
-    }
-
-    /* ── Layout ── */
-    #app {
-      position: relative; z-index: 1;
-      height: 100vh; width: 100vw;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 0;
-    }
-
-    /* ── Top label ── */
-    #session-label {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.7rem;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 36px;
-      transition: color 0.6s ease, opacity 0.4s;
-      opacity: 1;
-    }
-
-    /* ── Circular timer ── */
-    #ring-wrap {
-      position: relative;
-      width: var(--ring-size);
-      height: var(--ring-size);
-      display: flex; align-items: center; justify-content: center;
-    }
-
-    #ring-svg {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      transform: rotate(-90deg);
-      overflow: visible;
-    }
-
-    .ring-track {
-      fill: none;
-      stroke: var(--ring-bg);
-      stroke-width: var(--stroke);
-    }
-    .ring-fill {
-      fill: none;
-      stroke: url(#ringGrad);
-      stroke-width: var(--stroke);
-      stroke-linecap: round;
-      stroke-dasharray: 1000; /* set by JS */
-      stroke-dashoffset: 0;
-      transition: stroke-dashoffset 1s linear;
-      filter: drop-shadow(0 0 8px rgba(124,106,255,0.6));
-    }
-
-    /* tick marks */
-    .tick {
-      stroke: var(--border);
-      stroke-width: 1.5;
-    }
-
-    /* ── Time display ── */
-    #time-display {
-      position: relative; z-index: 2;
-      display: flex; flex-direction: column; align-items: center;
-    }
-
-    #time-text {
-      font-family: 'DM Mono', monospace;
-      font-size: clamp(3rem, 10vw, 5.5rem);
-      font-weight: 300;
-      letter-spacing: 0.03em;
-      color: var(--text);
-      cursor: pointer;
-      transition: transform 0.2s ease, color 0.3s;
-      line-height: 1;
-    }
-    #time-text:hover { color: #fff; }
-    #time-text.editable { color: var(--accent2); }
-    #time-text.scale-up { animation: scaleUp 0.3s ease forwards; }
-    @keyframes scaleUp {
-      0%   { transform: scale(1); }
-      50%  { transform: scale(1.05); }
-      100% { transform: scale(1); }
-    }
-
-    #time-hint {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.62rem;
-      letter-spacing: 0.14em;
-      color: var(--muted);
-      margin-top: 10px;
-      transition: opacity 0.4s;
-    }
-
-    /* ── Presets ── */
-    #presets {
-      display: flex; gap: 10px;
-      margin-top: 32px;
-      transition: opacity 0.4s;
-    }
-    .preset-btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-family: 'DM Mono', monospace;
-      font-size: 0.7rem;
-      letter-spacing: 0.1em;
-      padding: 7px 16px;
-      border-radius: 40px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .preset-btn:hover {
-      border-color: var(--accent1);
-      color: var(--accent2);
-      background: rgba(124,106,255,0.07);
-    }
-    .preset-btn.active {
-      border-color: var(--accent1);
-      color: var(--accent2);
-      background: rgba(124,106,255,0.12);
-    }
-
-    /* ── Controls ── */
-    #controls {
-      margin-top: 40px;
-      display: flex; align-items: center; gap: 14px;
-    }
-
-    .btn-primary {
-      position: relative; overflow: hidden;
-      background: linear-gradient(135deg, var(--accent1), var(--accent2));
-      border: none;
-      color: #fff;
-      font-family: 'Syne', sans-serif;
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      padding: 14px 42px;
-      border-radius: 50px;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.3s;
-      box-shadow: 0 0 30px rgba(124,106,255,0.2);
-    }
-    .btn-primary::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: rgba(255,255,255,0.1);
-      opacity: 0; transition: opacity 0.2s;
-    }
-    .btn-primary:hover::after { opacity: 1; }
-    .btn-primary:active { transform: scale(0.95); }
-
-    .btn-secondary {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-family: 'DM Mono', monospace;
-      font-size: 0.7rem;
-      letter-spacing: 0.1em;
-      padding: 13px 22px;
-      border-radius: 50px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .btn-secondary:hover {
-      border-color: rgba(255,255,255,0.15);
-      color: var(--text);
-    }
-    .btn-secondary:active { transform: scale(0.95); }
-
-    /* ── Completion glow ── */
-    .completion-glow {
-      animation: completionPulse 0.6s ease-out;
-    }
-    @keyframes completionPulse {
-      0%   { box-shadow: 0 0 0px 0px rgba(124,106,255,0); }
-      40%  { box-shadow: 0 0 60px 30px rgba(124,106,255,0.25); }
-      100% { box-shadow: 0 0 0px 0px rgba(124,106,255,0); }
-    }
-
-    /* ── Input overlay ── */
-    #input-overlay {
-      position: fixed; inset: 0; z-index: 100;
-      background: rgba(10,10,12,0.85);
-      backdrop-filter: blur(10px);
-      display: none;
-      align-items: center; justify-content: center;
-      flex-direction: column; gap: 20px;
-    }
-    #input-overlay.show { display: flex; animation: fadeIn 0.2s ease; }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-    #input-overlay p {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.7rem;
-      letter-spacing: 0.18em;
-      color: var(--muted);
-      text-transform: uppercase;
-    }
-    #custom-input {
-      font-family: 'DM Mono', monospace;
-      font-size: clamp(2.5rem, 8vw, 4.5rem);
-      font-weight: 300;
-      color: var(--text);
-      background: none;
-      border: none;
-      border-bottom: 2px solid var(--accent1);
-      text-align: center;
-      width: 220px;
-      outline: none;
-      padding-bottom: 4px;
-      letter-spacing: 0.05em;
-    }
-    #input-overlay small {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.6rem;
-      letter-spacing: 0.15em;
-      color: var(--muted);
-    }
-
-    /* ── State-based visibility ── */
-    .hidden { opacity: 0 !important; pointer-events: none !important; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0D0D0D" />
+<title>Study Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html,body,#root{background:#0d0d0d;color:#f5f5f5;min-height:100vh}
+  body{margin:0;font-family:"Outfit",ui-sans-serif,system-ui,sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%,rgba(124,58,237,.08),transparent 60%),radial-gradient(900px 500px at 50% 110%,rgba(37,99,235,.06),transparent 60%),#0d0d0d;
+    transition:background-color 800ms ease}
+  body.timer-running{background-color:#110b17}
+  .font-mono-timer{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .timer-input{caret-color:#a78bfa;background:transparent;border:0;color:#F5F5F5;text-align:center;width:1.7ch;padding:0;margin:0;outline:none}
+  .timer-input::selection{background:rgba(124,58,237,.35)}
+  @keyframes completion-glow{0%{box-shadow:0 0 0 0 rgba(124,58,237,.45)}70%{box-shadow:0 0 0 28px rgba(124,58,237,0)}100%{box-shadow:0 0 0 0 rgba(124,58,237,0)}}
+  @keyframes timer-pop{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
+  .completion-pulse{animation:completion-glow 700ms ease-out,timer-pop 600ms cubic-bezier(.34,1.56,.64,1)}
+  @keyframes heatmap-fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  .heatmap-cell{animation:heatmap-fade-in 400ms ease-out both;transition:transform 200ms ease,background-color 260ms ease,box-shadow 200ms ease}
+  .heatmap-cell:hover{transform:scale(1.18);z-index:5;box-shadow:0 0 0 1px rgba(255,255,255,.35)}
+  .press-95{transition:transform 150ms ease,background-color 200ms ease,color 200ms ease,border-color 200ms ease,opacity 200ms ease}
+  .press-95:active{transform:scale(.95)}
+  .ring-glow{filter:drop-shadow(0 0 24px rgba(124,58,237,.35)) drop-shadow(0 0 48px rgba(37,99,235,.15))}
+</style>
 </head>
 <body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-<div class="blob blob1 blob-pulse"></div>
-<div class="blob blob2 blob-pulse" style="animation-delay:-3s"></div>
+// ========== time helpers ==========
+const pad2 = n => String(Math.max(0, Math.floor(n))).padStart(2, "0");
+const secondsToHMS = t => { t = Math.max(0, Math.floor(t)); return { hours: Math.floor(t/3600), minutes: Math.floor((t%3600)/60), seconds: t%60 }; };
+const hmsToSeconds = ({hours,minutes,seconds}) => Math.max(0, (hours|0)*3600 + (minutes|0)*60 + (seconds|0));
+const localDateKey = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const formatPrettyDate = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+const formatDurationHuman = totalMinutes => { const m = Math.max(0, Math.round(totalMinutes)); const h = Math.floor(m/60), mm = m%60; if (h===0) return `${mm}m`; if (mm===0) return `${h}h`; return `${h}h ${mm}m`; };
 
-<div id="app">
-  <div id="session-label">focus session</div>
+// ========== sessions (localStorage) ==========
+const STORAGE_KEY = "study_timer_sessions";
+const readSessions = () => { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : {}; } catch { return {}; } };
+const writeSessions = d => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} };
+const updateHeatmap = durationInSeconds => {
+  const date = localDateKey(); const minutes = durationInSeconds/60;
+  const data = readSessions();
+  if (!data[date]) data[date] = { totalFocusMinutes: 0, sessionCount: 0 };
+  data[date].totalFocusMinutes += minutes; data[date].sessionCount += 1;
+  writeSessions(data); return data;
+};
+const getHeatmapLevel = m => { if (!m||m<=0) return "none"; const h=m/60; if (h>6) return "green"; if (h>=3) return "yellow"; return "red"; };
 
-  <div id="ring-wrap">
-    <svg id="ring-svg" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stop-color="#7c6aff"/>
-          <stop offset="100%" stop-color="#38bdf8"/>
-        </linearGradient>
-      </defs>
-      <!-- tick marks generated by JS -->
-      <g id="ticks"></g>
-      <circle class="ring-track" cx="170" cy="170" r="152"/>
-      <circle class="ring-fill"  cx="170" cy="170" r="152" id="ring"/>
-    </svg>
+// ========== chime (WebAudio) ==========
+let audioCtx=null;
+const playChime = () => {
+  const Ctor = window.AudioContext||window.webkitAudioContext; if(!Ctor) return;
+  if(!audioCtx) audioCtx = new Ctor();
+  const ctx = audioCtx; if (ctx.state==="suspended") { try{ctx.resume()}catch{} }
+  const now = ctx.currentTime, master = ctx.createGain();
+  master.gain.setValueAtTime(.0001,now);
+  master.gain.exponentialRampToValueAtTime(.25, now+.02);
+  master.gain.exponentialRampToValueAtTime(.0001, now+1.6);
+  master.connect(ctx.destination);
+  [523.25,783.99].forEach((f,i)=>{
+    const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=f;
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(.0001,now);
+    g.gain.exponentialRampToValueAtTime(.6-i*.2, now+.03);
+    g.gain.exponentialRampToValueAtTime(.0001, now+1.4-i*.2);
+    o.connect(g); g.connect(master); o.start(now); o.stop(now+1.6);
+  });
+};
+const vibrate = () => { if (navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch {} };
 
-    <div id="time-display">
-      <div id="time-text" title="Click to edit">25:00</div>
-      <div id="time-hint">tap to edit</div>
+// ========== Circular timer + inline editor ==========
+const TimeField = ({refEl, editing, value, onChange, onKeyDown, onFocus, max, testId}) => {
+  const sanitize = v => v.replace(/[^0-9]/g,"").slice(0,3);
+  return <input ref={refEl} type="text" inputMode="numeric" pattern="[0-9]*" value={value}
+    readOnly={!editing}
+    onChange={e=>{ const v = sanitize(e.target.value); if (max!==undefined){const n=parseInt(v||"0",10); if(!isNaN(n)&&n>max){ onChange(String(max)); return; }} onChange(v); }}
+    onKeyDown={onKeyDown} onFocus={onFocus} aria-label={testId} data-testid={testId}
+    className="timer-input font-mono-timer" style={{width:"1.7ch"}} />;
+};
+
+const CircularTimer = ({remainingSeconds,totalSeconds,state,onChangeDuration,pulseKey}) => {
+  const isEditable = state==="idle";
+  const {hours,minutes,seconds} = secondsToHMS(remainingSeconds);
+  const [editing,setEditing] = useState(false);
+  const [draft,setDraft] = useState({h:"",m:"",s:""});
+  const hRef=useRef(null), mRef=useRef(null), sRef=useRef(null), wrapRef=useRef(null);
+  const size=360, stroke=3, radius=(size-stroke*2)/2, circ=2*Math.PI*radius;
+  const progress = totalSeconds>0 ? Math.min(1,Math.max(0,remainingSeconds/totalSeconds)) : 0;
+  const dash = circ*(1-progress);
+  const dH = editing?draft.h:pad2(hours), dM = editing?draft.m:pad2(minutes), dS = editing?draft.s:pad2(seconds);
+
+  const beginEdit = focusRef => {
+    if (!isEditable || editing) return;
+    setDraft({h:pad2(hours),m:pad2(minutes),s:pad2(seconds)});
+    setEditing(true);
+    setTimeout(()=>{const el=focusRef?.current??hRef.current; el?.focus(); el?.select();},0);
+  };
+  const commit = () => {
+    if(!editing) return;
+    const h=Math.max(0,parseInt(draft.h||"0",10)||0);
+    let m=Math.max(0,parseInt(draft.m||"0",10)||0);
+    let s=Math.max(0,parseInt(draft.s||"0",10)||0);
+    if(m>59)m=59; if(s>59)s=59;
+    setEditing(false);
+    onChangeDuration?.({hours:h,minutes:m,seconds:s});
+  };
+  const onKeyDown = (e,w) => {
+    if (e.key==="Enter"){e.preventDefault();commit();e.currentTarget.blur();}
+    else if (e.key==="Escape"){e.preventDefault();setEditing(false);}
+    else if (e.key==="ArrowUp"||e.key==="ArrowDown"){
+      e.preventDefault(); const delta=e.key==="ArrowUp"?1:-1;
+      setDraft(d=>{const n=parseInt(d[w]||"0",10)||0; const nx=Math.max(0,n+delta); return {...d,[w]:pad2(w==="h"?nx:Math.min(59,nx))};});
+    }
+  };
+  useEffect(()=>{
+    if(!editing) return;
+    const on = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) commit(); };
+    document.addEventListener("mousedown",on);
+    return ()=>document.removeEventListener("mousedown",on);
+  },[editing,draft]);
+
+  return (
+    <div ref={wrapRef} className="relative flex items-center justify-center select-none" style={{width:size,height:size}}>
+      <svg width={size} height={size} className={state==="running"?"ring-glow":""} style={{transform:"rotate(-90deg)",transition:"filter 400ms ease"}}>
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#7C3AED"/><stop offset="100%" stopColor="#2563EB"/></linearGradient></defs>
+        <circle cx={size/2} cy={size/2} r={radius} stroke="#1f1f22" strokeWidth={stroke} fill="none"/>
+        <circle cx={size/2} cy={size/2} r={radius} stroke="url(#g)" strokeWidth={stroke+1} strokeLinecap="round" fill="none"
+          strokeDasharray={circ} strokeDashoffset={state==="idle"?0:dash}
+          style={{transition:state==="running"?"stroke-dashoffset 900ms linear":"stroke-dashoffset 400ms ease",opacity:state==="idle"?.55:1}}/>
+      </svg>
+      <div key={`p-${pulseKey}`} className={`absolute inset-0 flex flex-col items-center justify-center ${state==="completed"?"completion-pulse":""}`} style={{borderRadius:"9999px"}}>
+        <div className="font-mono-timer text-[#F5F5F5] text-5xl sm:text-6xl lg:text-7xl font-light tracking-tighter flex items-baseline gap-1"
+          onClick={()=>beginEdit(hRef)} role={isEditable?"button":undefined} tabIndex={isEditable&&!editing?0:-1}
+          onKeyDown={e=>{if(isEditable&&!editing&&e.key==="Enter")beginEdit(hRef);}}
+          style={{cursor:isEditable?"text":"default"}}>
+          <TimeField refEl={hRef} editing={editing&&isEditable} value={dH} onChange={v=>setDraft(d=>({...d,h:v}))} onKeyDown={e=>onKeyDown(e,"h")} onFocus={()=>beginEdit(hRef)} max={999} testId="time-input-hours"/>
+          <span className="text-[#444] px-1">:</span>
+          <TimeField refEl={mRef} editing={editing&&isEditable} value={dM} onChange={v=>setDraft(d=>({...d,m:v}))} onKeyDown={e=>onKeyDown(e,"m")} onFocus={()=>beginEdit(mRef)} max={59} testId="time-input-minutes"/>
+          <span className="text-[#444] px-1">:</span>
+          <TimeField refEl={sRef} editing={editing&&isEditable} value={dS} onChange={v=>setDraft(d=>({...d,s:v}))} onKeyDown={e=>onKeyDown(e,"s")} onFocus={()=>beginEdit(sRef)} max={59} testId="time-input-seconds"/>
+        </div>
+        <div className="mt-4 text-[10px] sm:text-xs tracking-[0.32em] uppercase font-semibold text-[#666]">
+          {state==="idle" && (isEditable?"click to edit":"")}
+          {state==="running" && "focus"}
+          {state==="paused" && "paused"}
+          {state==="completed" && "complete"}
+        </div>
+      </div>
     </div>
+  );
+};
+
+// ========== Controls ==========
+const Controls = ({state,onStart,onPause,onResume,onCancel,canStart}) => {
+  if (state==="idle"||state==="completed") return (
+    <button onClick={onStart} disabled={!canStart}
+      className="press-95 inline-flex items-center gap-2 rounded-full px-10 py-4 bg-[#F5F5F5] text-[#0D0D0D] text-sm font-semibold tracking-wide uppercase disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white">
+      ▶ Start
+    </button>
+  );
+  if (state==="running") return (
+    <div className="flex items-center gap-3">
+      <button onClick={onPause} className="press-95 inline-flex items-center gap-2 rounded-full px-8 py-3 border border-[#2a2a2a] text-[#d4d4d4] hover:text-[#F5F5F5] hover:bg-[#1a1a1a]">
+        <span className="text-xs tracking-[0.2em] uppercase font-semibold">⏸ Pause</span>
+      </button>
+      <button onClick={onCancel} className="press-95 inline-flex items-center gap-2 rounded-full px-5 py-3 text-[#666] hover:text-[#F5F5F5]">
+        <span className="text-xs tracking-[0.2em] uppercase font-semibold">✕ Cancel</span>
+      </button>
+    </div>
+  );
+  return (
+    <div className="flex items-center gap-3">
+      <button onClick={onResume} className="press-95 inline-flex items-center gap-2 rounded-full px-8 py-3 bg-[#F5F5F5] text-[#0D0D0D] hover:bg-white">
+        <span className="text-xs tracking-[0.2em] uppercase font-semibold">▶ Resume</span>
+      </button>
+      <button onClick={onCancel} className="press-95 inline-flex items-center gap-2 rounded-full px-5 py-3 text-[#666] hover:text-[#F5F5F5]">
+        <span className="text-xs tracking-[0.2em] uppercase font-semibold">↻ Reset</span>
+      </button>
+    </div>
+  );
+};
+
+// ========== Presets ==========
+const PRESETS = [{label:"15m",seconds:900},{label:"25m",seconds:1500},{label:"50m",seconds:3000}];
+const Presets = ({currentSeconds,onPick}) => (
+  <div className="flex items-center gap-2">
+    {PRESETS.map(p => {
+      const active = currentSeconds===p.seconds;
+      return <button key={p.label} onClick={()=>onPick(p.seconds)}
+        className={`press-95 text-xs tracking-[0.22em] uppercase font-semibold px-4 py-2 rounded-full border transition-colors ${active?"border-[#3a2a55] text-[#F5F5F5] bg-[#18122a]":"border-transparent text-[#555] hover:text-[#e5e5e5] hover:border-[#262626]"}`}>{p.label}</button>;
+    })}
   </div>
+);
 
-  <div id="presets">
-    <button class="preset-btn" data-min="15">15 min</button>
-    <button class="preset-btn active" data-min="25">25 min</button>
-    <button class="preset-btn" data-min="50">50 min</button>
-  </div>
-
-  <div id="controls">
-    <button class="btn-primary" id="main-btn">Start</button>
-    <button class="btn-secondary hidden" id="cancel-btn">Cancel</button>
-  </div>
-</div>
-
-<!-- Custom time input overlay -->
-<div id="input-overlay">
-  <p>set duration</p>
-  <input id="custom-input" type="text" placeholder="25:00" maxlength="5"/>
-  <small>MM:SS · press Enter to confirm</small>
-</div>
-
-<script>
-  // ── Constants & state ──
-  const R = 152;
-  const CIRC = 2 * Math.PI * R;
-
-  let totalSeconds = 25 * 60;
-  let remaining = totalSeconds;
-  let intervalId = null;
-  let state = 'idle'; // idle | running | paused | done
-
-  // ── DOM refs ──
-  const timeText   = document.getElementById('time-text');
-  const timeHint   = document.getElementById('time-hint');
-  const ring       = document.getElementById('ring');
-  const mainBtn    = document.getElementById('main-btn');
-  const cancelBtn  = document.getElementById('cancel-btn');
-  const presets    = document.querySelectorAll('.preset-btn');
-  const overlay    = document.getElementById('input-overlay');
-  const customIn   = document.getElementById('custom-input');
-  const sessionLbl = document.getElementById('session-label');
-  const presetsDiv = document.getElementById('presets');
-  const ticks      = document.getElementById('ticks');
-
-  // ── Init ring ──
-  ring.style.strokeDasharray = CIRC;
-  ring.style.strokeDashoffset = 0;
-
-  // Draw tick marks
-  for (let i = 0; i < 60; i++) {
-    const angle = (i / 60) * 2 * Math.PI - Math.PI / 2;
-    const inner = i % 5 === 0 ? 136 : 140;
-    const outer = 144;
-    const x1 = 170 + inner * Math.cos(angle);
-    const y1 = 170 + inner * Math.sin(angle);
-    const x2 = 170 + outer * Math.cos(angle);
-    const y2 = 170 + outer * Math.sin(angle);
-    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
-    line.classList.add('tick');
-    if (i % 5 === 0) line.style.stroke = 'rgba(255,255,255,0.08)';
-    ticks.appendChild(line);
-  }
-
-  // ── Helpers ──
-  function fmt(s) {
-    const m = Math.floor(s / 60).toString().padStart(2,'0');
-    const sec = (s % 60).toString().padStart(2,'0');
-    return `${m}:${sec}`;
-  }
-
-  function setRing(frac) {
-    // frac 0→1 = empty→full
-    ring.style.strokeDashoffset = CIRC * (1 - frac);
-  }
-
-  function updateDisplay() {
-    timeText.textContent = fmt(remaining);
-    setRing(remaining / totalSeconds);
-  }
-
-  function setPresetActive(min) {
-    presets.forEach(b => {
-      b.classList.toggle('active', parseInt(b.dataset.min) === min);
-    });
-  }
-
-  // ── State transitions ──
-  function toIdle() {
-    state = 'idle';
-    clearInterval(intervalId);
-    remaining = totalSeconds;
-    updateDisplay();
-    mainBtn.textContent = 'Start';
-    cancelBtn.classList.add('hidden');
-    timeHint.textContent = 'tap to edit';
-    timeHint.classList.remove('hidden');
-    presetsDiv.classList.remove('hidden');
-    sessionLbl.textContent = 'focus session';
-    setPresetActive(totalSeconds / 60);
-    ring.style.transition = 'stroke-dashoffset 0.6s ease';
-    setRing(1);
-  }
-
-  function toRunning() {
-    state = 'running';
-    ring.style.transition = 'stroke-dashoffset 1s linear';
-    timeText.classList.add('scale-up');
-    setTimeout(() => timeText.classList.remove('scale-up'), 300);
-    mainBtn.textContent = 'Pause';
-    cancelBtn.classList.remove('hidden');
-    timeHint.classList.add('hidden');
-    presetsDiv.classList.add('hidden');
-    sessionLbl.textContent = 'deep focus';
-    startTick();
-  }
-
-  function toPaused() {
-    state = 'paused';
-    clearInterval(intervalId);
-    mainBtn.textContent = 'Resume';
-    sessionLbl.textContent = 'paused';
-  }
-
-  function toDone() {
-    state = 'done';
-    clearInterval(intervalId);
-    remaining = 0;
-    updateDisplay();
-    sessionLbl.textContent = 'session complete ✦';
-    mainBtn.textContent = 'Start Over';
-    cancelBtn.classList.add('hidden');
-    timeHint.classList.remove('hidden');
-    timeHint.textContent = '';
-    // Completion glow
-    const wrap = document.getElementById('ring-wrap');
-    wrap.classList.add('completion-glow');
-    setTimeout(() => wrap.classList.remove('completion-glow'), 700);
-    // Subtle beep
-    playDone();
-  }
-
-  function startTick() {
-    clearInterval(intervalId);
-    intervalId = setInterval(() => {
-      if (remaining <= 0) { toDone(); return; }
-      remaining--;
-      updateDisplay();
-    }, 1000);
-  }
-
-  // ── Button logic ──
-  mainBtn.addEventListener('click', () => {
-    if (state === 'idle' || state === 'done') {
-      if (state === 'done') {
-        remaining = totalSeconds;
-        presetsDiv.classList.remove('hidden');
-        timeHint.classList.remove('hidden');
-        timeHint.textContent = 'tap to edit';
-        setPresetActive(totalSeconds / 60);
-        updateDisplay();
-      }
-      toRunning();
-    } else if (state === 'running') {
-      toPaused();
-    } else if (state === 'paused') {
-      toRunning();
+// ========== Heatmap ==========
+const LEVEL_BG = {none:"#161616", red:"#E11D48", yellow:"#EAB308", green:"#10B981"};
+const WEEKS=52, DAYS=7;
+const buildGrid = sessions => {
+  const today=new Date(); const endOfWeek=new Date(today); endOfWeek.setHours(0,0,0,0);
+  endOfWeek.setDate(endOfWeek.getDate()+(6-endOfWeek.getDay()));
+  const start=new Date(endOfWeek); start.setDate(start.getDate()-(WEEKS*DAYS-1));
+  const cells=[];
+  for (let col=0; col<WEEKS; col++){
+    const week=[];
+    for (let row=0; row<DAYS; row++){
+      const d=new Date(start); d.setDate(start.getDate()+col*DAYS+row);
+      const key=localDateKey(d); const entry=sessions[key]; const isFuture=d>today;
+      week.push({date:d,key,entry,isFuture});
     }
-  });
-
-  cancelBtn.addEventListener('click', () => {
-    toIdle();
-  });
-
-  // ── Preset buttons ──
-  presets.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (state !== 'idle') return;
-      const min = parseInt(btn.dataset.min);
-      totalSeconds = min * 60;
-      remaining = totalSeconds;
-      setPresetActive(min);
-      updateDisplay();
-      ring.style.transition = 'stroke-dashoffset 0.5s ease';
-    });
-  });
-
-  // ── Click time to edit ──
-  timeText.addEventListener('click', () => {
-    if (state !== 'idle' && state !== 'done') return;
-    customIn.value = fmt(remaining);
-    overlay.classList.add('show');
-    setTimeout(() => { customIn.select(); customIn.focus(); }, 50);
-  });
-
-  function closeOverlay() {
-    overlay.classList.remove('show');
+    cells.push(week);
   }
+  return cells;
+};
+const Heatmap = ({refreshKey}) => {
+  const sessions = useMemo(()=>readSessions(),[refreshKey]);
+  const grid = useMemo(()=>buildGrid(sessions),[sessions]);
+  const [tip,setTip] = useState(null);
+  const totalSessions = Object.values(sessions).reduce((a,b)=>a+(b?.sessionCount||0),0);
+  const totalMinutes = Object.values(sessions).reduce((a,b)=>a+(b?.totalFocusMinutes||0),0);
+  const activeDays = Object.values(sessions).filter(v=>(v?.sessionCount||0)>0).length;
+  return (
+    <div className="w-full max-w-5xl mx-auto p-6 sm:p-8 rounded-2xl border border-[#1f1f22] bg-[#0f0f12]/60 backdrop-blur-md">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg sm:text-xl font-medium tracking-tight text-[#f0f0f0]">Focus trail</h2>
+          <p className="text-xs tracking-[0.18em] uppercase font-semibold text-[#666] mt-1">Last 52 weeks · passive reflection</p>
+        </div>
+        <div className="flex items-center gap-5 text-xs text-[#888]">
+          <Stat label="Days" value={activeDays}/>
+          <Stat label="Sessions" value={totalSessions}/>
+          <Stat label="Hours" value={(totalMinutes/60).toFixed(1)}/>
+        </div>
+      </div>
+      <div className="relative overflow-x-auto -mx-2 px-2 pb-2">
+        <div className="grid gap-[3px]" style={{gridTemplateColumns:`repeat(${WEEKS}, minmax(10px, 1fr))`, gridAutoFlow:"column"}}>
+          {grid.map((week,wi)=>(
+            <div key={wi} className="grid gap-[3px]" style={{gridTemplateRows:`repeat(${DAYS}, minmax(10px, 1fr))`}}>
+              {week.map((cell,di)=>{
+                const level = getHeatmapLevel(cell.entry?.totalFocusMinutes||0);
+                const color = LEVEL_BG[level];
+                const n = cell.entry?.sessionCount||0;
+                const label = cell.entry
+                  ? `${formatPrettyDate(cell.date)} — ${formatDurationHuman(cell.entry.totalFocusMinutes)} · ${n} session${n===1?"":"s"}`
+                  : `${formatPrettyDate(cell.date)} — no sessions`;
+                const isToday = cell.key===localDateKey();
+                return <div key={`${wi}-${di}`} title={label}
+                  onMouseEnter={()=>setTip(label)} onMouseLeave={()=>setTip(null)}
+                  className="heatmap-cell rounded-[3px] flex items-center justify-center text-[9px] font-semibold"
+                  style={{width:"100%",aspectRatio:"1 / 1",backgroundColor:cell.isFuture?"transparent":color,
+                    border:isToday?"1px solid rgba(255,255,255,.4)":"none",opacity:cell.isFuture?.15:1,
+                    animationDelay:`${(wi*7+di)*2}ms`, color:level==="yellow"?"#1a1a1a":"#fff"}}>
+                  {n>0?n:""}
+                </div>;
+              })}
+            </div>
+          ))}
+        </div>
+        {tip && <div className="mt-3 text-xs text-[#aaa]">{tip}</div>}
+      </div>
+      <div className="flex items-center gap-3 mt-5 text-[10px] tracking-[0.2em] uppercase font-semibold text-[#555]">
+        <span>less</span>
+        {["none","red","yellow","green"].map(k=><span key={k} className="inline-block w-3 h-3 rounded-[3px]" style={{backgroundColor:LEVEL_BG[k]}}/>)}
+        <span>more</span>
+        <span className="hidden sm:inline ml-auto normal-case tracking-normal text-[#444]">red &lt; 3h · yellow 3–6h · green &gt; 6h</span>
+      </div>
+    </div>
+  );
+};
+const Stat = ({label,value}) => (
+  <div className="flex flex-col items-end">
+    <span className="font-mono-timer text-[#f0f0f0] text-base leading-none">{value}</span>
+    <span className="text-[10px] tracking-[0.22em] uppercase font-semibold text-[#555] mt-1">{label}</span>
+  </div>
+);
 
-  customIn.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      const val = customIn.value.trim();
-      const parts = val.split(':');
-      let secs = 0;
-      if (parts.length === 2) {
-        secs = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-      } else {
-        secs = parseInt(val) * 60;
-      }
-      if (!isNaN(secs) && secs > 0) {
-        totalSeconds = Math.min(secs, 99 * 60 + 59);
-        remaining = totalSeconds;
-        updateDisplay();
-        setPresetActive(-1); // deselect all
-        state = 'idle';
-        mainBtn.textContent = 'Start';
-        cancelBtn.classList.add('hidden');
-        timeHint.textContent = 'tap to edit';
-        timeHint.classList.remove('hidden');
-        presetsDiv.classList.remove('hidden');
-      }
-      closeOverlay();
-    }
-    if (e.key === 'Escape') closeOverlay();
-  });
+// ========== Main app ==========
+const DEFAULT = 25*60;
+function StudyTimer(){
+  const [planned,setPlanned] = useState(DEFAULT);
+  const [remaining,setRemaining] = useState(DEFAULT);
+  const [state,setState] = useState("idle");
+  const [pulseKey,setPulseKey] = useState(0);
+  const [heatKey,setHeatKey] = useState(0);
+  const targetAt = useRef(null), tickRef = useRef(null);
+  const clearTick = () => { if (tickRef.current){clearInterval(tickRef.current); tickRef.current=null;} };
+  const completeRun = useCallback(()=>{
+    clearTick(); setRemaining(0); setState("completed"); setPulseKey(k=>k+1);
+    updateHeatmap(planned); playChime(); vibrate(); setHeatKey(k=>k+1);
+    document.body.classList.remove("timer-running");
+    setTimeout(()=>{setState("idle"); setRemaining(planned);},1400);
+  },[planned]);
+  const tick = useCallback(()=>{
+    if (targetAt.current==null) return;
+    const rm = targetAt.current - Date.now();
+    if (rm<=0){ completeRun(); return; }
+    setRemaining(Math.ceil(rm/1000));
+  },[completeRun]);
+  const start = () => { const t=remaining>0?remaining:planned; if(t<=0) return;
+    setPlanned(t); setRemaining(t); targetAt.current=Date.now()+t*1000;
+    setState("running"); clearTick(); tickRef.current=setInterval(tick,200);
+    document.body.classList.add("timer-running"); };
+  const pause = () => { if(state!=="running") return; clearTick();
+    const rm=(targetAt.current||Date.now())-Date.now();
+    setRemaining(Math.max(0,Math.ceil(rm/1000))); targetAt.current=null;
+    setState("paused"); document.body.classList.remove("timer-running"); };
+  const resume = () => { if(state!=="paused") return;
+    targetAt.current=Date.now()+remaining*1000; clearTick();
+    tickRef.current=setInterval(tick,200); setState("running");
+    document.body.classList.add("timer-running"); };
+  const cancel = () => { clearTick(); targetAt.current=null;
+    setState("idle"); setRemaining(planned); document.body.classList.remove("timer-running"); };
+  const changeDuration = ({hours,minutes,seconds}) => {
+    const t = hmsToSeconds({hours,minutes,seconds}); const safe=t>0?t:DEFAULT;
+    setPlanned(safe); setRemaining(safe);
+  };
+  const pickPreset = s => { setPlanned(s); setRemaining(s); };
+  useEffect(()=>()=>{ clearTick(); document.body.classList.remove("timer-running"); },[]);
+  useEffect(()=>{
+    const h = e => {
+      if (e.target && (e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")) return;
+      if (e.code==="Space"){ e.preventDefault();
+        if (state==="idle"||state==="completed") start();
+        else if (state==="running") pause();
+        else if (state==="paused") resume();
+      } else if (e.key==="Escape" && (state==="running"||state==="paused")) cancel();
+    };
+    window.addEventListener("keydown",h);
+    return ()=>window.removeEventListener("keydown",h);
+  },[state,remaining,planned]);
+  return (
+    <div className="min-h-screen w-full flex flex-col items-center">
+      <header className="w-full max-w-6xl px-6 sm:px-10 pt-8 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full relative" style={{background:"conic-gradient(from 220deg, #7C3AED, #2563EB, #7C3AED)",boxShadow:"0 0 16px rgba(124,58,237,.35)"}}>
+            <div className="absolute inset-[4px] rounded-full bg-[#0D0D0D]"/>
+          </div>
+          <span className="text-sm tracking-[0.28em] uppercase font-semibold text-[#888]">Study Timer</span>
+        </div>
+        <span className="hidden sm:inline text-[11px] tracking-[0.22em] uppercase text-[#444]">a focus ritual</span>
+      </header>
+      <main className="flex-1 w-full flex flex-col items-center justify-center py-16 sm:py-24 gap-10">
+        <CircularTimer remainingSeconds={remaining} totalSeconds={planned} state={state} onChangeDuration={changeDuration} pulseKey={pulseKey}/>
+        {state==="idle" && <Presets currentSeconds={planned} onPick={pickPreset}/>}
+        <Controls state={state} onStart={start} onPause={pause} onResume={resume} onCancel={cancel} canStart={remaining>0}/>
+        {state==="idle" && <p className="text-xs text-[#555] mt-2 max-w-sm text-center tracking-wide">
+          Press <kbd className="px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#262626] text-[#aaa] font-mono-timer text-[10px]">Space</kbd> to start. Click the timer to edit.
+        </p>}
+      </main>
+      <section className="w-full px-6 sm:px-10 pb-16">
+        <Heatmap refreshKey={heatKey}/>
+      </section>
+    </div>
+  );
+}
 
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) closeOverlay();
-  });
-
-  // ── Subtle completion sound ──
-  function playDone() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const freqs = [523.25, 659.25, 783.99]; // C5 E5 G5
-      freqs.forEach((f, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.value = f;
-        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.18);
-        gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + i * 0.18 + 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.7);
-        osc.start(ctx.currentTime + i * 0.18);
-        osc.stop(ctx.currentTime + i * 0.18 + 0.8);
-      });
-    } catch(e) {}
-  }
-
-  // ── Init ──
-  updateDisplay();
+ReactDOM.createRoot(document.getElementById("root")).render(<StudyTimer/>);
 </script>
 </body>
 </html>
+
+
