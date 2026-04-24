@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Study Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0c;
+      --bg2: #111115;
+      --surface: #18181f;
+      --border: rgba(255,255,255,0.06);
+      --text: #f0f0f0;
+      --muted: #555566;
+      --accent1: #7c6aff;
+      --accent2: #a78bfa;
+      --accent3: #38bdf8;
+      --glow: rgba(124, 106, 255, 0.25);
+      --ring-bg: rgba(255,255,255,0.04);
+      --ring-size: min(52vw, 340px);
+      --stroke: 5;
+      --r: calc(var(--ring-size) / 2 - 18px);
+      --circ: calc(2 * 3.14159265 * var(--r));
+    }
+
+    html, body {
+      height: 100%; width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Noise grain overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 180px;
+      pointer-events: none; z-index: 9999;
+      opacity: 0.5;
+    }
+
+    /* Ambient gradient blobs */
+    .blob {
+      position: fixed; border-radius: 50%;
+      filter: blur(90px); pointer-events: none; z-index: 0;
+      transition: opacity 2s ease;
+    }
+    .blob1 {
+      width: 50vw; height: 50vw;
+      background: radial-gradient(circle, rgba(124,106,255,0.12) 0%, transparent 70%);
+      top: -15vw; left: -10vw;
+    }
+    .blob2 {
+      width: 40vw; height: 40vw;
+      background: radial-gradient(circle, rgba(56,189,248,0.08) 0%, transparent 70%);
+      bottom: -10vw; right: -10vw;
+    }
+    .blob-pulse {
+      animation: blobPulse 8s ease-in-out infinite alternate;
+    }
+    @keyframes blobPulse {
+      from { opacity: 0.6; transform: scale(1); }
+      to   { opacity: 1;   transform: scale(1.15); }
+    }
+
+    /* ── Layout ── */
+    #app {
+      position: relative; z-index: 1;
+      height: 100vh; width: 100vw;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 0;
+    }
+
+    /* ── Top label ── */
+    #session-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 36px;
+      transition: color 0.6s ease, opacity 0.4s;
+      opacity: 1;
+    }
+
+    /* ── Circular timer ── */
+    #ring-wrap {
+      position: relative;
+      width: var(--ring-size);
+      height: var(--ring-size);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    #ring-svg {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      transform: rotate(-90deg);
+      overflow: visible;
+    }
+
+    .ring-track {
+      fill: none;
+      stroke: var(--ring-bg);
+      stroke-width: var(--stroke);
+    }
+    .ring-fill {
+      fill: none;
+      stroke: url(#ringGrad);
+      stroke-width: var(--stroke);
+      stroke-linecap: round;
+      stroke-dasharray: 1000; /* set by JS */
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 1s linear;
+      filter: drop-shadow(0 0 8px rgba(124,106,255,0.6));
+    }
+
+    /* tick marks */
+    .tick {
+      stroke: var(--border);
+      stroke-width: 1.5;
+    }
+
+    /* ── Time display ── */
+    #time-display {
+      position: relative; z-index: 2;
+      display: flex; flex-direction: column; align-items: center;
+    }
+
+    #time-text {
+      font-family: 'DM Mono', monospace;
+      font-size: clamp(3rem, 10vw, 5.5rem);
+      font-weight: 300;
+      letter-spacing: 0.03em;
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.2s ease, color 0.3s;
+      line-height: 1;
+    }
+    #time-text:hover { color: #fff; }
+    #time-text.editable { color: var(--accent2); }
+    #time-text.scale-up { animation: scaleUp 0.3s ease forwards; }
+    @keyframes scaleUp {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    #time-hint {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      margin-top: 10px;
+      transition: opacity 0.4s;
+    }
+
+    /* ── Presets ── */
+    #presets {
+      display: flex; gap: 10px;
+      margin-top: 32px;
+      transition: opacity 0.4s;
+    }
+    .preset-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      padding: 7px 16px;
+      border-radius: 40px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .preset-btn:hover {
+      border-color: var(--accent1);
+      color: var(--accent2);
+      background: rgba(124,106,255,0.07);
+    }
+    .preset-btn.active {
+      border-color: var(--accent1);
+      color: var(--accent2);
+      background: rgba(124,106,255,0.12);
+    }
+
+    /* ── Controls ── */
+    #controls {
+      margin-top: 40px;
+      display: flex; align-items: center; gap: 14px;
+    }
+
+    .btn-primary {
+      position: relative; overflow: hidden;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      border: none;
+      color: #fff;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 14px 42px;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.3s;
+      box-shadow: 0 0 30px rgba(124,106,255,0.2);
+    }
+    .btn-primary::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,0.1);
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .btn-primary:hover::after { opacity: 1; }
+    .btn-primary:active { transform: scale(0.95); }
+
+    .btn-secondary {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      padding: 13px 22px;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-secondary:hover {
+      border-color: rgba(255,255,255,0.15);
+      color: var(--text);
+    }
+    .btn-secondary:active { transform: scale(0.95); }
+
+    /* ── Completion glow ── */
+    .completion-glow {
+      animation: completionPulse 0.6s ease-out;
+    }
+    @keyframes completionPulse {
+      0%   { box-shadow: 0 0 0px 0px rgba(124,106,255,0); }
+      40%  { box-shadow: 0 0 60px 30px rgba(124,106,255,0.25); }
+      100% { box-shadow: 0 0 0px 0px rgba(124,106,255,0); }
+    }
+
+    /* ── Input overlay ── */
+    #input-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(10,10,12,0.85);
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 20px;
+    }
+    #input-overlay.show { display: flex; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    #input-overlay p {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    #custom-input {
+      font-family: 'DM Mono', monospace;
+      font-size: clamp(2.5rem, 8vw, 4.5rem);
+      font-weight: 300;
+      color: var(--text);
+      background: none;
+      border: none;
+      border-bottom: 2px solid var(--accent1);
+      text-align: center;
+      width: 220px;
+      outline: none;
+      padding-bottom: 4px;
+      letter-spacing: 0.05em;
+    }
+    #input-overlay small {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+    }
+
+    /* ── State-based visibility ── */
+    .hidden { opacity: 0 !important; pointer-events: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="blob blob1 blob-pulse"></div>
+<div class="blob blob2 blob-pulse" style="animation-delay:-3s"></div>
+
+<div id="app">
+  <div id="session-label">focus session</div>
+
+  <div id="ring-wrap">
+    <svg id="ring-svg" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stop-color="#7c6aff"/>
+          <stop offset="100%" stop-color="#38bdf8"/>
+        </linearGradient>
+      </defs>
+      <!-- tick marks generated by JS -->
+      <g id="ticks"></g>
+      <circle class="ring-track" cx="170" cy="170" r="152"/>
+      <circle class="ring-fill"  cx="170" cy="170" r="152" id="ring"/>
+    </svg>
+
+    <div id="time-display">
+      <div id="time-text" title="Click to edit">25:00</div>
+      <div id="time-hint">tap to edit</div>
+    </div>
+  </div>
+
+  <div id="presets">
+    <button class="preset-btn" data-min="15">15 min</button>
+    <button class="preset-btn active" data-min="25">25 min</button>
+    <button class="preset-btn" data-min="50">50 min</button>
+  </div>
+
+  <div id="controls">
+    <button class="btn-primary" id="main-btn">Start</button>
+    <button class="btn-secondary hidden" id="cancel-btn">Cancel</button>
+  </div>
+</div>
+
+<!-- Custom time input overlay -->
+<div id="input-overlay">
+  <p>set duration</p>
+  <input id="custom-input" type="text" placeholder="25:00" maxlength="5"/>
+  <small>MM:SS · press Enter to confirm</small>
+</div>
+
+<script>
+  // ── Constants & state ──
+  const R = 152;
+  const CIRC = 2 * Math.PI * R;
+
+  let totalSeconds = 25 * 60;
+  let remaining = totalSeconds;
+  let intervalId = null;
+  let state = 'idle'; // idle | running | paused | done
+
+  // ── DOM refs ──
+  const timeText   = document.getElementById('time-text');
+  const timeHint   = document.getElementById('time-hint');
+  const ring       = document.getElementById('ring');
+  const mainBtn    = document.getElementById('main-btn');
+  const cancelBtn  = document.getElementById('cancel-btn');
+  const presets    = document.querySelectorAll('.preset-btn');
+  const overlay    = document.getElementById('input-overlay');
+  const customIn   = document.getElementById('custom-input');
+  const sessionLbl = document.getElementById('session-label');
+  const presetsDiv = document.getElementById('presets');
+  const ticks      = document.getElementById('ticks');
+
+  // ── Init ring ──
+  ring.style.strokeDasharray = CIRC;
+  ring.style.strokeDashoffset = 0;
+
+  // Draw tick marks
+  for (let i = 0; i < 60; i++) {
+    const angle = (i / 60) * 2 * Math.PI - Math.PI / 2;
+    const inner = i % 5 === 0 ? 136 : 140;
+    const outer = 144;
+    const x1 = 170 + inner * Math.cos(angle);
+    const y1 = 170 + inner * Math.sin(angle);
+    const x2 = 170 + outer * Math.cos(angle);
+    const y2 = 170 + outer * Math.sin(angle);
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.classList.add('tick');
+    if (i % 5 === 0) line.style.stroke = 'rgba(255,255,255,0.08)';
+    ticks.appendChild(line);
+  }
+
+  // ── Helpers ──
+  function fmt(s) {
+    const m = Math.floor(s / 60).toString().padStart(2,'0');
+    const sec = (s % 60).toString().padStart(2,'0');
+    return `${m}:${sec}`;
+  }
+
+  function setRing(frac) {
+    // frac 0→1 = empty→full
+    ring.style.strokeDashoffset = CIRC * (1 - frac);
+  }
+
+  function updateDisplay() {
+    timeText.textContent = fmt(remaining);
+    setRing(remaining / totalSeconds);
+  }
+
+  function setPresetActive(min) {
+    presets.forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.min) === min);
+    });
+  }
+
+  // ── State transitions ──
+  function toIdle() {
+    state = 'idle';
+    clearInterval(intervalId);
+    remaining = totalSeconds;
+    updateDisplay();
+    mainBtn.textContent = 'Start';
+    cancelBtn.classList.add('hidden');
+    timeHint.textContent = 'tap to edit';
+    timeHint.classList.remove('hidden');
+    presetsDiv.classList.remove('hidden');
+    sessionLbl.textContent = 'focus session';
+    setPresetActive(totalSeconds / 60);
+    ring.style.transition = 'stroke-dashoffset 0.6s ease';
+    setRing(1);
+  }
+
+  function toRunning() {
+    state = 'running';
+    ring.style.transition = 'stroke-dashoffset 1s linear';
+    timeText.classList.add('scale-up');
+    setTimeout(() => timeText.classList.remove('scale-up'), 300);
+    mainBtn.textContent = 'Pause';
+    cancelBtn.classList.remove('hidden');
+    timeHint.classList.add('hidden');
+    presetsDiv.classList.add('hidden');
+    sessionLbl.textContent = 'deep focus';
+    startTick();
+  }
+
+  function toPaused() {
+    state = 'paused';
+    clearInterval(intervalId);
+    mainBtn.textContent = 'Resume';
+    sessionLbl.textContent = 'paused';
+  }
+
+  function toDone() {
+    state = 'done';
+    clearInterval(intervalId);
+    remaining = 0;
+    updateDisplay();
+    sessionLbl.textContent = 'session complete ✦';
+    mainBtn.textContent = 'Start Over';
+    cancelBtn.classList.add('hidden');
+    timeHint.classList.remove('hidden');
+    timeHint.textContent = '';
+    // Completion glow
+    const wrap = document.getElementById('ring-wrap');
+    wrap.classList.add('completion-glow');
+    setTimeout(() => wrap.classList.remove('completion-glow'), 700);
+    // Subtle beep
+    playDone();
+  }
+
+  function startTick() {
+    clearInterval(intervalId);
+    intervalId = setInterval(() => {
+      if (remaining <= 0) { toDone(); return; }
+      remaining--;
+      updateDisplay();
+    }, 1000);
+  }
+
+  // ── Button logic ──
+  mainBtn.addEventListener('click', () => {
+    if (state === 'idle' || state === 'done') {
+      if (state === 'done') {
+        remaining = totalSeconds;
+        presetsDiv.classList.remove('hidden');
+        timeHint.classList.remove('hidden');
+        timeHint.textContent = 'tap to edit';
+        setPresetActive(totalSeconds / 60);
+        updateDisplay();
+      }
+      toRunning();
+    } else if (state === 'running') {
+      toPaused();
+    } else if (state === 'paused') {
+      toRunning();
+    }
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    toIdle();
+  });
+
+  // ── Preset buttons ──
+  presets.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state !== 'idle') return;
+      const min = parseInt(btn.dataset.min);
+      totalSeconds = min * 60;
+      remaining = totalSeconds;
+      setPresetActive(min);
+      updateDisplay();
+      ring.style.transition = 'stroke-dashoffset 0.5s ease';
+    });
+  });
+
+  // ── Click time to edit ──
+  timeText.addEventListener('click', () => {
+    if (state !== 'idle' && state !== 'done') return;
+    customIn.value = fmt(remaining);
+    overlay.classList.add('show');
+    setTimeout(() => { customIn.select(); customIn.focus(); }, 50);
+  });
+
+  function closeOverlay() {
+    overlay.classList.remove('show');
+  }
+
+  customIn.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const val = customIn.value.trim();
+      const parts = val.split(':');
+      let secs = 0;
+      if (parts.length === 2) {
+        secs = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      } else {
+        secs = parseInt(val) * 60;
+      }
+      if (!isNaN(secs) && secs > 0) {
+        totalSeconds = Math.min(secs, 99 * 60 + 59);
+        remaining = totalSeconds;
+        updateDisplay();
+        setPresetActive(-1); // deselect all
+        state = 'idle';
+        mainBtn.textContent = 'Start';
+        cancelBtn.classList.add('hidden');
+        timeHint.textContent = 'tap to edit';
+        timeHint.classList.remove('hidden');
+        presetsDiv.classList.remove('hidden');
+      }
+      closeOverlay();
+    }
+    if (e.key === 'Escape') closeOverlay();
+  });
+
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) closeOverlay();
+  });
+
+  // ── Subtle completion sound ──
+  function playDone() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const freqs = [523.25, 659.25, 783.99]; // C5 E5 G5
+      freqs.forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = f;
+        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.18);
+        gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + i * 0.18 + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.7);
+        osc.start(ctx.currentTime + i * 0.18);
+        osc.stop(ctx.currentTime + i * 0.18 + 0.8);
+      });
+    } catch(e) {}
+  }
+
+  // ── Init ──
+  updateDisplay();
+</script>
+</body>
+</html>
